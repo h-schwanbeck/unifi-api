@@ -6,11 +6,9 @@ try:
 except:
     pass
 
-import cookielib
 import json
 import logging
-import urllib
-import urllib2
+import requests
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +34,7 @@ class Controller:
 
     """
 
-    def __init__(self, host, username, password, version='v2', site_id='default'):
+    def __init__(self, host, username, password, version='v2', site_id='default', verify_ssl=False):
         """Create a Controller object.
 
         Arguments:
@@ -57,13 +55,13 @@ class Controller:
 
         log.debug('Controller for %s', self.url)
 
-        cj = cookielib.CookieJar()
-        self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
+        self.session = requests.Session()
+        self.session.verify = verify_ssl
 
         self._login()
 
-    def _jsondec(self, data):
-        obj = json.loads(data)
+    def _jsondec(self, resp):
+        obj = resp.json()
         if 'meta' in obj:
             if obj['meta']['rc'] != 'ok':
                 raise APIError(obj['meta']['msg'])
@@ -72,8 +70,8 @@ class Controller:
         return obj
 
     def _read(self, url, params=None):
-        res = self.opener.open(url, params)
-        return self._jsondec(res.read())
+        res = self.session.get(url, params=params)
+        return self._jsondec(res)
 
     def _construct_api_path(self, version):
         """Returns valid base API path based on version given
@@ -95,9 +93,13 @@ class Controller:
 
     def _login(self):
         log.debug('login() as %s', self.username)
-        params = urllib.urlencode({'login': 'login',
-            'username': self.username, 'password': self.password})
-        self.opener.open(self.url + 'login', params).read()
+        verify=False
+        params = {
+            'login': 'login',
+            'username': self.username,
+            'password': self.password
+        }
+        self.session.get(self.url + 'login', params=params)
 
     def get_alerts(self):
         """Return a list of all Alerts."""
@@ -113,7 +115,7 @@ class Controller:
         """Return a list of all AP:s, with significant information about each."""
 
         js = json.dumps({'_depth': 2, 'test': None})
-        params = urllib.urlencode({'json': js})
+        params = {'json': js}
         return self._read(self.api_url + 'stat/device', params)
 
     def get_clients(self):
@@ -138,7 +140,7 @@ class Controller:
 
     def _mac_cmd(self, target_mac, command, mgr='stamgr'):
         log.debug('_mac_cmd(%s, %s)', target_mac, command)
-        params = urllib.urlencode({'json': json.dumps({'mac': target_mac, 'cmd': command})})
+        params = {'json': json.dumps({'mac': target_mac, 'cmd': command})}
         self._read(self.api_url + 'cmd/' + mgr, params)
 
     def block_client(self, mac):
@@ -202,7 +204,7 @@ class Controller:
         """Archive all Alerts
         """
         js = json.dumps({'cmd': 'archive-all-alarms'})
-        params = urllib.urlencode({'json': js})
+        params = {'json': js}
         answer = self._read(self.api_url + 'cmd/evtmgr', params)
         
     def create_backup(self):
@@ -213,7 +215,7 @@ class Controller:
         """
 
         js = json.dumps({'cmd': 'backup'})
-        params = urllib.urlencode({'json': js})
+        params = {'json': js}
         answer = self._read(self.api_url + 'cmd/system', params)
 
         return answer[0].get('url')

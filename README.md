@@ -1,6 +1,7 @@
 unifi-api
 =========
 
+A branch of https://github.com/calmh/unifi-api but uses python-request lib instead of urllib2.
 A rewrite of https://github.com/unifi-hackers/unifi-lab in cleaner Python.
 
 Install
@@ -105,13 +106,16 @@ controller. Operations will raise unifi.controller.APIError on obvious
 problems (such as login failure), but many errors (such as disconnecting a
 nonexistant client) will go unreported.
 
-### `__init__(self, host, username, password)`
+### `__init__(self, host, username, password, version='v2', site_id='default', verify_ssl=Fals)`
 
 Create a Controller object.
      
  - `host` -- the address of the controller host; IP or name
  - `username` -- the username to log in with
  - `password` -- the password to log in with
+ - `version` -- unifi version
+ - `site_id` -- unifi site id for unifi v3
+ - `verify_ssl` -- default false use true if you have a valid ssl cert
  
 ### `block_client(self, mac)`
 
