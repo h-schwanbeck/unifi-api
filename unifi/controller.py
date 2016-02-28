@@ -109,8 +109,7 @@ class Controller:
         return obj
 
     def _read(self, url, params=None):
-        print url
-        print params
+        from .helpers import retry
         if PYTHON_VERSION == 3:
             if params is not None:
                 params = ast.literal_eval(params)
@@ -121,7 +120,21 @@ class Controller:
             else:
                 res = self.opener.open(url)
         elif PYTHON_VERSION == 2:
-            res = self.opener.open(url, params)
+            process         = 1
+            backofftime     = 1
+            trial           = 1
+            max_trials      = 5
+            while ( process and trial < max_trials) :            
+                try:
+                    res = self.opener.open(url, params)
+                except urllib2.URLError,e:
+                    log.error('URL error while trying connect to %s'%url)
+                    time.sleep(backofftime)
+                    backofftime = backofftime * 2
+                    trial = trial + 1
+                else:
+                    process = 0                    
+
         return self._jsondec(res.read())
 
     def _construct_api_path(self, version,site_id=None):
