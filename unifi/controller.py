@@ -164,7 +164,20 @@ class Controller:
         
         if(version == 'v4'):
             params = "{'username':'" + self.username + "','password':'" + self.password + "'}"
-            self.opener.open(self.url + 'api/login', params).read()
+            process         = 1
+            backofftime     = 1
+            trial           = 1
+            max_trials      = 5
+            while ( process and trial < max_trials) :            
+                try:            
+                    self.opener.open(self.url + 'api/login', params).read()
+                except urllib2.URLError,e:
+                    log.error('URL error while trying connect to %s'%self.url)
+                    time.sleep(backofftime)
+                    backofftime = backofftime * 2
+                    trial = trial + 1
+                else:
+                    process = 0                     
         else:
             if PYTHON_VERSION == 2:
                 params = urllib.urlencode({'login': 'login',
@@ -172,13 +185,36 @@ class Controller:
             elif PYTHON_VERSION == 3:
                 params = urllib.parse.urlencode({'login': 'login',
                                    'username': self.username, 'password': self.password}).encode("UTF-8")
-            self.opener.open(self.url + 'login', params).read()
-
+            process         = 1
+            backofftime     = 1
+            trial           = 1
+            max_trials      = 5
+            while ( process and trial < max_trials) :            
+                try:                
+                    self.opener.open(self.url + 'login', params).read()
+                except urllib2.URLError,e:
+                    log.error('URL error while trying connect to %s'%self.url)
+                    time.sleep(backofftime)
+                    backofftime = backofftime * 2
+                    trial = trial + 1
+                else:
+                    process = 0  
     def _logout(self):
         log.debug('logout()')
-
-        self.opener.open(self.url + 'logout').read()
-
+        process         = 1
+        backofftime     = 1
+        trial           = 1
+        max_trials      = 5
+        while ( process and trial < max_trials) :            
+            try:  
+                self.opener.open(self.url + 'logout').read()
+            except urllib2.URLError,e:
+                log.error('URL error while trying connect to %s'%self.url)
+                time.sleep(backofftime)
+                backofftime = backofftime * 2
+                trial = trial + 1
+            else:
+                process = 0  
     def get_alerts(self):
         """Return a list of all Alerts."""
 
