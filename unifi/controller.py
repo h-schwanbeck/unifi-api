@@ -19,17 +19,17 @@ import sys
 PYTHON_VERSION = sys.version_info[0]
 
 if PYTHON_VERSION == 2:
-    import cookielib
-    import urllib2
+    from cookielib import CookieJar
+    from urllib2 import build_opener, HTTPCookieProcessor
+    from urllib import urlencode
 elif PYTHON_VERSION == 3:
-    import http.cookiejar as cookielib
-    import urllib3
-    import ast
+    from http.cookiejar import CookieJar
+    from urllib.request import build_opener, HTTPCookieProcessor
+    from urllib.parse import urlencode
 
 import json
 import logging
 from time import time
-import urllib
 
 
 log = logging.getLogger(__name__)
@@ -83,11 +83,8 @@ class Controller:
 
         log.debug('Controller for %s', self.url)
 
-        cj = cookielib.CookieJar()
-        if PYTHON_VERSION == 2:
-            self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
-        elif PYTHON_VERSION == 3:
-            self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+        cj = CookieJar()
+        self.opener = build_opener(HTTPCookieProcessor(cj))
 
         self._login(version)
 
@@ -96,8 +93,6 @@ class Controller:
             self._logout()
 
     def _jsondec(self, data):
-        if PYTHON_VERSION == 3:
-            data = data.decode()
         obj = json.loads(data)
         if 'meta' in obj:
             if obj['meta']['rc'] != 'ok':
@@ -107,18 +102,12 @@ class Controller:
         return obj
 
     def _read(self, url, params=None):
-        if PYTHON_VERSION == 3:
-            if params is not None:
-                params = ast.literal_eval(params)
-                #print (params)
-                params = urllib.parse.urlencode(params)
-                params = params.encode('utf-8')
-                res = self.opener.open(url, params)
-            else:
-                res = self.opener.open(url)
-        elif PYTHON_VERSION == 2:
-            res = self.opener.open(url, params)
-        return self._jsondec(res.read())
+        if isinstance(params, dict):
+            params = urlencode(params)
+        if isinstance(params, str):
+            params = params.encode('utf-8')
+        res = self.opener.open(url, params)
+        return self._jsondec(res.read().decode('utf-8'))
 
     def _construct_api_path(self, version):
         """Returns valid base API path based on version given
@@ -152,12 +141,9 @@ class Controller:
         else:
             login_url += 'login'
             params.update({'login': 'login'})
-            if PYTHON_VERSION is 2:
-                params = urllib.urlencode(params)
-            elif PYTHON_VERSION is 3:
-                params = urllib.parse.urlencode(params)
+            params = urlencode(params)
 
-        if PYTHON_VERSION is 3:
+        if isinstance(params, str):
             params = params.encode("UTF-8")
 
         self.opener.open(login_url, params).read()
@@ -175,8 +161,7 @@ class Controller:
     def get_alerts_unarchived(self):
         """Return a list of Alerts unarchived."""
 
-        js = json.dumps({'_sort': '-time', 'archived': False})
-        params = urllib.urlencode({'json': js})
+        params = json.dumps({'_sort': '-time', 'archived': False})
         return self._read(self.api_url + 'list/alarm', params)
 
     def get_statistics_last_24h(self):
@@ -187,10 +172,9 @@ class Controller:
     def get_statistics_24h(self, endtime):
         """Return statistical data last 24h from time"""
 
-        js = json.dumps(
+        params = json.dumps(
             {'attrs': ["bytes", "num_sta", "time"], 'start': int(endtime - 86400) * 1000, 'end': int(endtime - 3600) * 1000})
-        params = urllib.urlencode({'json': js})
-        return self._read(self.api_url + 'stat/report/hourly.system', params)
+        return self._read(self.api_url + 'stat/report/hourly.site', params)
 
     def get_events(self):
         """Return a list of all Events."""
@@ -227,10 +211,7 @@ class Controller:
     def _run_command(self, command, params={}, mgr='stamgr'):
         log.debug('_run_command(%s)', command)
         params.update({'cmd': command})
-        if PYTHON_VERSION == 2:
-            return self._read(self.api_url + 'cmd/' + mgr, urllib.urlencode({'json': json.dumps(params)}))
-        elif PYTHON_VERSION == 3:
-            return self._read(self.api_url + 'cmd/' + mgr, urllib.parse.urlencode({'json': json.dumps(params)}))
+        return self._read(self.api_url + 'cmd/' + mgr, json.dumps(params))
 
     def _mac_cmd(self, target_mac, command, mgr='stamgr'):
         log.debug('_mac_cmd(%s, %s)', target_mac, command)
@@ -297,8 +278,7 @@ class Controller:
     def archive_all_alerts(self):
         """Archive all Alerts
         """
-        js = json.dumps({'cmd': 'archive-all-alarms'})
-        params = urllib.urlencode({'json': js})
+        params = json.dumps({'cmd': 'archive-all-alarms'})
         answer = self._read(self.api_url + 'cmd/evtmgr', params)
 
     def create_backup(self):
@@ -308,8 +288,7 @@ class Controller:
                  render it partially unresponsive for other requests.
         """
 
-        js = json.dumps({'cmd': 'backup'})
-        params = urllib.urlencode({'json': js})
+        params = json.dumps({'cmd': 'backup'})
         answer = self._read(self.api_url + 'cmd/system', params)
 
         return answer[0].get('url')
@@ -326,7 +305,7 @@ class Controller:
         opener = self.opener.open(self.url + download_path)
         unifi_archive = opener.read()
 
-        backupfile = open(target_file, 'w')
+        backupfile = open(target_file, 'wb')
         backupfile.write(unifi_archive)
         backupfile.close()
 
