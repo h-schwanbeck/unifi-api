@@ -223,6 +223,11 @@ class Controller:
         """Return a list of configured WLANs with their configuration parameters."""
 
         return self._read(self.api_url + 'list/wlanconf')
+    
+    def get_sites(self):
+    	"""Return a list of sites"""
+    	
+    	return self._read(self.url + 'api/stat/sites')
 
     def _run_command(self, command, params={}, mgr='stamgr'):
         log.debug('_run_command(%s)', command)
@@ -269,7 +274,28 @@ class Controller:
         """
 
         self._mac_cmd(mac, 'kick-sta')
+        
+    def adopt_ap(self, mac):
+        """Adopt an access point (by MAC).
 
+        Arguments:
+            mac -- the MAC address of the AP to restart.
+
+        """
+
+        self._mac_cmd(mac, 'adopt', 'devmgr')
+
+    def add_site(self, site):
+        """Adds a new site.
+
+        Arguments:
+            site -- the site name to add.
+
+        """
+        params = {'desc': site}
+
+        self._run_command('add-site', params, 'sitemgr')
+        
     def restart_ap(self, mac):
         """Restart an access point (by MAC).
 
