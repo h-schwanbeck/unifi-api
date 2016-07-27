@@ -295,7 +295,19 @@ class Controller:
         params = {'desc': site}
 
         self._run_command('add-site', params, 'sitemgr')
-        
+
+    def add_admin(self, email, name, role):
+        """Adds a new admin.
+
+        Arguments:
+            email -- email address for admin.
+            name -- username for admin,  no spaces,  can be changed
+            role -- must be admin or readonly
+
+        """
+        params = {'email': email, 'name': name, 'role': role, 'for_sso': false}
+        self._run_command('invide-admin', params, sitemgr)
+
     def restart_ap(self, mac):
         """Restart an access point (by MAC).
 
