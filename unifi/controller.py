@@ -305,9 +305,20 @@ class Controller:
             role -- must be admin or readonly
 
         """
-        params = {'email': email, 'name': name, 'role': role, 'for_sso': false}
-        self._run_command('invide-admin', params, sitemgr)
+        params = {'email': email, 'name': name, 'role': role, 'for_sso':'false'}
+        self._run_command('invide-admin', params, 'sitemgr')
 
+    def revoke_admin(self, admin):
+        """Revoke admin account. per site.
+
+        Arguements:
+            admin -- id of admin to revoke
+        
+        """
+
+        params = {'admin': admin}
+        self._run_command('revoke-admin', params, 'sitemgr')
+    
     def restart_ap(self, mac):
         """Restart an access point (by MAC).
 
