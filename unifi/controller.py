@@ -225,9 +225,9 @@ class Controller:
         return self._read(self.api_url + 'list/wlanconf')
     
     def get_sites(self):
-    	"""Return a list of sites"""
-    	
-    	return self._read(self.url + 'api/stat/sites')
+        """Return a list of sites"""
+        
+        return self._read(self.url + 'api/stat/sites')
 
     def _run_command(self, command, params={}, mgr='stamgr'):
         log.debug('_run_command(%s)', command)
