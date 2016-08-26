@@ -30,7 +30,7 @@ elif PYTHON_VERSION == 3:
 
 import json
 import logging
-from time import time
+from time import time, sleep
 
 
 log = logging.getLogger(__name__)
@@ -105,7 +105,6 @@ class Controller:
         return obj
 
     def _read(self, url, params=None):
-        from .helpers import retry
         if PYTHON_VERSION == 3:
             if params is not None:
                 params = ast.literal_eval(params)
@@ -119,18 +118,21 @@ class Controller:
             backofftime     = 1
             trial           = 1
             max_trials      = 5
-            while ( process and trial < max_trials) :            
+            while(process and trial < max_trials):
                 try:
                     res = self.opener.open(url, params)
                 except URLError,e:
                     log.error('URL error while trying connect to %s'%url)
-                    time.sleep(backofftime)
+                    sleep(backofftime)
                     backofftime = backofftime * 2
                     trial = trial + 1
                 else:
                     process = 0                    
-
-        return self._jsondec(res.read())
+        try:
+            answer = res.read()
+        except:
+            raise APIError('Unable to read from controller')
+        return self._jsondec(answer)
 
     def _construct_api_path(self, version,site_id=None):
         """Returns valid base API path based on version given
@@ -168,7 +170,7 @@ class Controller:
                     self.opener.open(self.url + 'api/login', params).read()
                 except URLError,e:
                     log.error('URL error while trying connect to %s'%self.url)
-                    time.sleep(backofftime)
+                    sleep(backofftime)
                     backofftime = backofftime * 2
                     trial = trial + 1
                 else:
@@ -189,7 +191,7 @@ class Controller:
                     self.opener.open(self.url + 'login', params).read()
                 except URLError,e:
                     log.error('URL error while trying connect to %s'%self.url)
-                    time.sleep(backofftime)
+                    sleep(backofftime)
                     backofftime = backofftime * 2
                     trial = trial + 1
                 else:
@@ -206,7 +208,7 @@ class Controller:
                 self.opener.open(self.url + 'logout').read()
             except URLError,e:
                 log.error('URL error while trying connect to %s'%self.url)
-                time.sleep(backofftime)
+                sleep(backofftime)
                 backofftime = backofftime * 2
                 trial = trial + 1
             else:
@@ -221,7 +223,7 @@ class Controller:
         """Return a list of Alerts unarchived."""
 
         js = json.dumps({'_sort': '-time', 'archived': False})
-        params = urllib.urlencode({'json': js})
+        params = urlencode({'json': js})
         return self._read(self.api_url + 'list/alarm', params)
 
     def get_statistics_last_24h(self):
@@ -234,7 +236,7 @@ class Controller:
 
         js = json.dumps(
             {'attrs': ["bytes", "num_sta", "time"], 'start': int(endtime - 86400) * 1000, 'end': int(endtime - 3600) * 1000})
-        params = urllib.urlencode({'json': js})
+        params = urlencode({'json': js})
         return self._read(self.api_url + 'stat/report/hourly.system', params)
 
     def get_events(self):
@@ -502,10 +504,7 @@ class Controller:
 
         api_url = self.url + self._construct_api_path(self.version,site_id=site_id)
         log.debug('_set_setting(%s)', category)
-        if PYTHON_VERSION == 2:
-            return self._read(api_url + 'set/setting/' + category, urllib.urlencode({'json': json.dumps(params)}))
-        elif PYTHON_VERSION == 3:
-            return self._read(api_url + 'set/setting/' + category, urllib.parse.urlencode({'json': json.dumps(params)}))        
+        return self._read(api_url + 'set/setting/' + category, urlencode({'json': json.dumps(params)}))
 
     def set_smtp(self,site_id,host='127.0.0.1',port='25',use_ssl=False,
             use_auth=False,username=None,x_password=None,use_sender=False,sender=None):
