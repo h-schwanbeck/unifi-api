@@ -1,23 +1,12 @@
-try:
-    # Ugly hack to force SSLv3 and avoid
-    # urllib2.URLError: <urlopen error [Errno 1] _ssl.c:504: error:14077438:SSL routines:SSL23_GET_SERVER_HELLO:tlsv1 alert internal error>
-    import _ssl
-    _ssl.PROTOCOL_SSLv23 = _ssl.PROTOCOL_SSLv3
-except:
-    pass
-
 import sys
-PYTHON_VERSION = sys.version_info[0]
-
-if PYTHON_VERSION == 3:
-    import ast
-
 import json
 import logging
 from requests import Session, HTTPError
 from time import time, sleep
 
+PYTHON_VERSION = sys.version_info[0]
 
+logging.basicConfig()
 log = logging.getLogger(__name__)
 
 
@@ -65,7 +54,7 @@ class Controller:
         self.password = password
         self.site_id = site_id
         self.url = 'https://' + self.host + ':' + str(self.port) + '/'
-        self.api_url = self.url + self._construct_api_path(version)
+        self.api_url = self.url + self._construct_api_path()
 
         log.debug('Controller for %s', self.url)
 
@@ -90,10 +79,10 @@ class Controller:
         max_trials      = 5
         while(process and trial < max_trials):
             try:
-                res = self.session.get(url, params=params)
+                res = self.session.post(url, json=params)
                 res.raise_for_status()
-            except HTTPError,e:
-                log.error('HTTP error while trying connect to %s'%url)
+            except HTTPError as e:
+                log.error('HTTP error: %s'%e)
                 sleep(backofftime)
                 backofftime = backofftime * 2
                 trial = trial + 1
@@ -101,8 +90,8 @@ class Controller:
                 process = 0                    
         return self._jsondec(res)
 
-    def _construct_api_path(self, version,site_id=None):
-        """Returns valid base API path based on version given
+    def _construct_api_path(self, site_id=None):
+        """Returns valid base API path
 
            The base API path for the URL is different depending on UniFi server version.
            Default returns correct path for latest known stable working versions.
@@ -114,19 +103,19 @@ class Controller:
         V2_PATH = 'api/'
         V3_PATH = 'api/s/' + site_id + '/'
 
-        if(version == 'v2'):
+        if(self.version == 'v2'):
             return V2_PATH
-        if(version == 'v3'):
+        if(self.version == 'v3'):
             return V3_PATH
-        if(version == 'v4'):
+        if(self.version == 'v4'):
             return V3_PATH
         else:
             return V2_PATH
 
-    def _login(self, version):
+    def _login(self):
         log.debug('login() as %s', self.username)
         
-        if(version == 'v4'):
+        if(self.version == 'v4'):
             params = {
                 'username': self.username,
                 'password': self.password
@@ -135,10 +124,10 @@ class Controller:
             backofftime     = 1
             trial           = 1
             max_trials      = 5
-            while ( process and trial < max_trials) :            
+            while(process and trial < max_trials):
                 try:
-                    self.session.get(self.url + 'api/login', params=params).raise_for_status()
-                except HTTPError,e:
+                    self.session.post(self.url + 'api/login', json=params).raise_for_status()
+                except HTTPError as e:
                     log.error('URL error while trying connect to %s'%self.url)
                     sleep(backofftime)
                     backofftime = backofftime * 2
@@ -158,8 +147,8 @@ class Controller:
             while ( process and trial < max_trials) :            
                 try:      
                     self.session.get(self.url + 'login', params=params).raise_for_status()
-                except HTTPError,e:
-                    log.error('URL error while trying connect to %s'%self.url)
+                except HTTPError as e:
+                    log.error('HTTP error: %s'%e)
                     sleep(backofftime)
                     backofftime = backofftime * 2
                     trial = trial + 1
@@ -175,8 +164,8 @@ class Controller:
         while ( process and trial < max_trials) :            
             try:
                 self.session.get(self.url + 'logout', params=params).raise_for_status()
-            except HTTPError,e:
-                log.error('URL error while trying connect to %s'%self.url)
+            except HTTPError as e:
+                log.error('HTTP error: %s'%e)
                 sleep(backofftime)
                 backofftime = backofftime * 2
                 trial = trial + 1
@@ -191,8 +180,7 @@ class Controller:
     def get_alerts_unarchived(self):
         """Return a list of Alerts unarchived."""
 
-        js = json.dumps({'_sort': '-time', 'archived': False})
-        params = urlencode({'json': js})
+        params = {'_sort': '-time', 'archived': False}
         return self._read(self.api_url + 'list/alarm', params)
 
     def get_statistics_last_24h(self):
@@ -203,9 +191,11 @@ class Controller:
     def get_statistics_24h(self, endtime):
         """Return statistical data last 24h from time"""
 
-        js = json.dumps(
-            {'attrs': ["bytes", "num_sta", "time"], 'start': int(endtime - 86400) * 1000, 'end': int(endtime - 3600) * 1000})
-        params = urlencode({'json': js})
+        params = {
+            'attrs': ["bytes", "num_sta", "time"],
+            'start': int(endtime - 86400) * 1000,
+            'end': int(endtime - 3600) * 1000
+        }
         return self._read(self.api_url + 'stat/report/hourly.system', params)
 
     def get_events(self):
@@ -218,9 +208,8 @@ class Controller:
 
         if not site_id:
             site_id = self.site_id
-        api_url = self.url + self._construct_api_path(self.version,site_id=site_id)
-        js = json.dumps({'_depth': 2, 'test': 0})
-        params = {'json': js}
+        api_url = self.url + self._construct_api_path(site_id)
+        params = {'_depth': 2, 'test': 0}
         return self._read(api_url + 'stat/device', params)
 
     def get_clients(self):
@@ -243,17 +232,17 @@ class Controller:
 
         return self._read(self.api_url + 'list/wlanconf')
 
-    def _run_command(self, command, params={}, mgr='stamgr',site_id=None):
+    def _run_command(self, command, params={}, mgr='stamgr', site_id=None):
         if not site_id:
             site_id = self.site_id
-        api_url = self.url + self._construct_api_path(self.version,site_id=site_id)
+        api_url = self.url + self._construct_api_path(site_id)
         log.debug('_run_command(%s)', command)
         params.update({'cmd': command})
         return self._read(api_url + 'cmd/' + mgr, {'json': json.dumps(params)})
 
     def _mac_cmd(self, target_mac, command, mgr='stamgr'):
         log.debug('_mac_cmd(%s, %s)', target_mac, command)
-        params = {'json': json.dumps({'mac': target_mac, 'cmd': command})}
+        params = {'mac': target_mac, 'cmd': command}
         self._read(self.api_url + 'cmd/' + mgr, params)
 
     def block_client(self, mac):
