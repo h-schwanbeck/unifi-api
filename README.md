@@ -113,16 +113,16 @@ controller. Operations will raise unifi.controller.APIError on obvious
 problems (such as login failure), but many errors (such as disconnecting a
 nonexistant client) will go unreported.
 
-### `__init__(self, host, username, password)`
+### `__init__(self, host, username, password, version='v2', site_id='default', verify_ssl=Fals)`
 
 Create a Controller object.
      
- - `host`		-- the address of the controller host; IP or name
- - `username`	-- the username to log in with
- - `password`	-- the password to log in with
- -  `port`		-- the port of the controller host
- -  `version`	-- the base version of the controller API [v2|v3]
- -  `site_id`	-- the site ID to connect to (UniFi >= 3.x) 
+ - `host` -- the address of the controller host; IP or name
+ - `username` -- the username to log in with
+ - `password` -- the password to log in with
+ - `version` -- unifi version
+ - `site_id` -- unifi site id for unifi v3
+ - `verify_ssl` -- default false use true if you have a valid ssl cert
  
 ### `block_client(self, mac)`
 
