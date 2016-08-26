@@ -10,16 +10,17 @@ elif sys.version_info[0] == 3:
 
 
 setup(name='unifi',
-      version='1.2.5',
-      description='API towards Ubiquity Networks UniFi controller',
-      author='Jakob Borg',
-      author_email='jakob@nym.se',
-      url='https://github.com/calmh/unifi-api',
-      packages=['unifi'],
-      scripts=['unifi-low-snr-reconnect', 'unifi-ls-clients', 'unifi-save-statistics', 'unifi-log-roaming'],
-      classifiers=['Development Status :: 4 - Beta',
-          'Intended Audience :: Developers',
-          'License :: OSI Approved :: MIT License',
-          'Topic :: Software Development :: Libraries',
-          'Topic :: System :: Networking']
-     )
+    version='1.2.5',
+    description='API towards Ubiquity Networks UniFi controller',
+    author='Jakob Borg',
+    author_email='jakob@nym.se',
+    url='https://github.com/calmh/unifi-api',
+    packages=['unifi'],
+    install_requires=['requests'],
+    scripts=['unifi-low-snr-reconnect', 'unifi-ls-clients', 'unifi-save-statistics', 'unifi-log-roaming'],
+    classifiers=['Development Status :: 4 - Beta',
+        'Intended Audience :: Developers',
+        'License :: OSI Approved :: MIT License',
+        'Topic :: Software Development :: Libraries',
+        'Topic :: System :: Networking']
+)

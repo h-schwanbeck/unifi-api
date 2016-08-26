@@ -99,7 +99,7 @@ class Controller:
         self._raw(self.api_url + command, params)
 
 
-    def _construct_api_path(self, site_id=None):
+    def _construct_api_path(self):
         """Returns valid base API path
 
            The base API path for the URL is different depending on UniFi server version.
@@ -107,11 +107,8 @@ class Controller:
 
         """
 
-        if not site_id:
-            site_id = self.site_id
-
         if self.version in ['v3', 'v4']:
-            return 'api/s/' + site_id + '/'
+            return 'api/s/' + self.site_id + '/'
         else:
             return 'api/'
 
@@ -306,6 +303,57 @@ class Controller:
                 self.restart_ap(ap['mac'])
 
 
+    def adopt_ap(self, ap_mac):
+        """Adopt a new AP.
+
+        Arguments:
+            ap_mac -- MAC address of the given ap.
+
+        """
+
+        log.debug('_devmgr_cmd(%s, %s)', ap_mac, "adopt")
+        params = {'cmd': 'adopt', 'mac': ap_mac}
+        self._exec('cmd/devmgr', params)    
+
+
+    def check_ap_state(self, ap_mac):
+        """Check the status of a given AP in the site
+        Arguments:
+            ap_mac -- MAC address of the given ap.
+
+        """
+    
+        return self._read('stat/device/%s'%ap_mac)
+
+
+    def move_ap(self, ap_mac, site_id):
+        """Move the specified AP from this site to another.
+
+        Arguments:
+            ap_mac -- MAC address of the given ap.
+            site_id -- _id used by unifi for representing wifi site
+
+        """
+
+        log.debug('_sitemgr_cmd(%s, %s, %s)', ap_mac, site_id, "move-device")
+        params = {'cmd': 'move-device', 'mac': ap_mac, 'site': site_id}
+        self._exec('cmd/sitemgr', params)  
+
+
+    def forget_ap(self, ap_mac):
+        """Forget the specified AP from controller
+
+        Arguments:
+            ap_mac  -- MAC address of the given ap.
+            site_id -- unifi site ID to which it should be moved
+
+        """
+
+        log.debug('_sitemgr_cmd(%s, %s, %s)', ap_mac, "delete-device")
+        params = {'cmd': 'delete-device', 'mac': ap_mac}
+        self._exec('cmd/sitemgr', params)
+
+
     def archive_all_alerts(self):
         """Archive all Alerts
         """
@@ -334,6 +382,7 @@ class Controller:
             target_file -- Filename or full path to download the backup archive to, should have .unf extension for restore.
 
         """
+
         download_path = self._create_backup()
 
         with open(target_file, 'wb') as handle:
@@ -342,3 +391,89 @@ class Controller:
             for block in response.iter_content(1024):
                 handle.write(block)
 
+
+    def add_site(self, sitename):
+        """Add a new site.
+
+        Arguments:
+            sitename -- namegiven for the new site.
+
+        """
+
+        log.debug('_sitemgr_cmd(%s, %s)', sitename, 'add-site')
+        params = {'cmd': 'add-site', 'desc': sitename}
+        self._exec('cmd/sitemgr', params)
+
+
+ 
+
+
+
+
+
+
+    ''' Not converted yet
+
+
+
+
+    def _set_setting(self,site_id, params={}, category='super_smtp'):
+
+        api_url = self.url + self._construct_api_path(self.version,site_id=site_id)
+        log.debug('_set_setting(%s)', category)
+        if PYTHON_VERSION == 2:
+            return self._read(api_url + 'set/setting/' + category, urllib.urlencode({'json': json.dumps(params)}))
+        elif PYTHON_VERSION == 3:
+            return self._read(api_url + 'set/setting/' + category, urllib.parse.urlencode({'json': json.dumps(params)}))        
+
+    def set_smtp(self,site_id,host='127.0.0.1',port='25',use_ssl=False,
+            use_auth=False,username=None,x_password=None,use_sender=False,sender=None):
+
+        """Set SMTP seetings for this site
+
+        Arguments:
+
+
+        """
+        log.debug('setting SMTP settings for site:%s',self.site_id )
+        params = {'host': host,'port':port,'use_ssl':use_ssl,
+                   'use_auth':use_auth,'username':username,'x_password':x_password,'use_sender':use_sender,'sender':sender}
+        return self._set_setting(site_id=site_id,params=params, category='super_smtp')          
+
+    def create_site_admin(self,site_id,name,email):
+        """Create Admin for the particular site
+
+        Arguments:
+            name -- Admin User Name.
+            email -- Email
+            site_id --  unifi site ID to which it should be moved
+
+        """
+        log.debug('_sitemgr_cmd(%s, %s, %s)', name,site_id, "invite-admin")
+        params = {'name': name,'email':email,'site':site_id}
+        return self._run_command('invite-admin', params, mgr='sitemgr',site_id=site_id)  
+
+    def set_guest_access(self,site_id,site_code,portal_ip,portal_subnet,portal_hostname):
+
+        """Set SMTP seetings for this site
+
+        Arguments:
+
+
+        """
+        log.debug('setting Guest settings for site:%s',site_id )
+
+        params =  {"portal_enabled":True,"auth":"custom","x_password":"","expire":"480","redirect_enabled":False,"redirect_url":'',
+        "custom_ip":portal_ip,"portal_customized":False,"portal_use_hostname":True,"portal_hostname":
+        portal_hostname,"voucher_enabled":False,"payment_enabled":False,"gateway":"paypal","x_paypal_username":
+        "","x_paypal_password":"","x_paypal_signature":"","paypal_use_sandbox":False,"x_stripe_api_key":"","x_quickpay_merchantid":
+        "","x_quickpay_md5secret":"","x_authorize_loginid":"","x_authorize_transactionkey":"","authorize_use_sandbox":
+        False,"x_merchantwarrior_merchantuuid":"","x_merchantwarrior_apikey":"","x_merchantwarrior_apipassphrase":
+        "","merchantwarrior_use_sandbox":False,"x_ippay_terminalid":"","ippay_use_sandbox":False,"restricted_subnet_1":
+        "192.168.0.0/16","restricted_subnet_2":"172.16.0.0/12","restricted_subnet_3":"10.0.0.0/8","allowed_subnet_1":
+        portal_subnet,"key":"guest_access","site_id":site_code}  
+
+        return self._set_setting(site_id=site_id,params=params, category='guest_access')   
+
+
+'''
