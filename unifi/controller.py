@@ -1,10 +1,6 @@
-import sys
-import json
 import logging
 from requests import Session, HTTPError
 from time import time, sleep
-
-PYTHON_VERSION = sys.version_info[0]
 
 logging.basicConfig()
 log = logging.getLogger(__name__)
@@ -38,12 +34,13 @@ class Controller:
         """Create a Controller object.
 
         Arguments:
-            host     -- the address of the controller host; IP or name
-            username -- the username to log in with
-            password -- the password to log in with
-            port     -- the port of the controller host
-            version  -- the base version of the controller API [v2|v3|v4]
-            site_id  -- the site ID to connect to (UniFi >= 3.x)
+            host       -- the address of the controller host; IP or name
+            username   -- the username to log in with
+            password   -- the password to log in with
+            port       -- the port of the controller host
+            version    -- the base version of the controller API [v2|v3|v4]
+            site_id    -- the site ID to connect to (UniFi >= 3.x)
+            verify_ssl -- set True if controller has a valid SSL cert installed
 
         """
 
@@ -53,42 +50,64 @@ class Controller:
         self.username = username
         self.password = password
         self.site_id = site_id
-        self.url = 'https://' + self.host + ':' + str(self.port) + '/'
+        self.url = "https://{host}:{port}/".format(host=self.host, port=self.port)
         self.api_url = self.url + self._construct_api_path()
 
         log.debug('Controller for %s', self.url)
 
         self.session = Session()
         self.session.verify = verify_ssl
+        self.max_retry = 3
 
         self._login()
 
-    def _jsondec(self, resp):
-        obj = resp.json()
-        if 'meta' in obj:
-            if obj['meta']['rc'] != 'ok':
-                raise APIError(obj['meta']['msg'])
-        if 'data' in obj:
-            return obj['data']
-        return obj
 
-    def _read(self, url, params=None):
-        process         = 1
-        backofftime     = 1
-        trial           = 1
-        max_trials      = 5
-        while(process and trial < max_trials):
+    def _jsondec(self, resp):
+        try:
+            obj = resp.json()
+            if 'meta' in obj:
+                if obj['meta']['rc'] != 'ok':
+                    raise APIError(obj['meta']['msg'])
+            if 'data' in obj:
+                return obj['data']
+            return obj
+        except:
+            return None
+
+
+    def _raw(self, url, params=None):
+        trial = 0
+        while(trial < self.max_retry):
             try:
                 res = self.session.post(url, json=params)
                 res.raise_for_status()
             except HTTPError as e:
-                log.error('HTTP error: %s'%e)
-                sleep(backofftime)
-                backofftime = backofftime * 2
-                trial = trial + 1
+                log.error('HTTP error: %s', e)
+                sleep(2**trial)
+                trial += 1
             else:
-                process = 0                    
+                break
+        return res
+
+
+    def _read(self, command, params=None, site=self.site_id):
+        url = "{base}{version}{command}".format(
+            base    = self.url,
+            version = self._construct_api_path(site),
+            command = command
+        )
+        res = self._raw(url, params)
         return self._jsondec(res)
+
+
+    def _exec(self, command, params=None, site=self.site_id):
+        url = "{base}{version}{command}".format(
+            base    = self.url,
+            version = self._construct_api_path(site),
+            command = command
+        )
+        self._raw(url, params)
+
 
     def _construct_api_path(self, site_id=None):
         """Returns valid base API path
@@ -97,96 +116,59 @@ class Controller:
            Default returns correct path for latest known stable working versions.
 
         """
+
         if not site_id:
             site_id = self.site_id
 
-        V2_PATH = 'api/'
-        V3_PATH = 'api/s/' + site_id + '/'
-
-        if(self.version == 'v2'):
-            return V2_PATH
-        if(self.version == 'v3'):
-            return V3_PATH
-        if(self.version == 'v4'):
-            return V3_PATH
+        if self.version in ['v3', 'v4']:
+            return 'api/s/' + site_id + '/'
         else:
-            return V2_PATH
+            return 'api/'
+
 
     def _login(self):
         log.debug('login() as %s', self.username)
-        
-        if(self.version == 'v4'):
-            params = {
-                'username': self.username,
-                'password': self.password
-            }
-            process         = 1
-            backofftime     = 1
-            trial           = 1
-            max_trials      = 5
-            while(process and trial < max_trials):
-                try:
-                    self.session.post(self.url + 'api/login', json=params).raise_for_status()
-                except HTTPError as e:
-                    log.error('URL error while trying connect to %s'%self.url)
-                    sleep(backofftime)
-                    backofftime = backofftime * 2
-                    trial = trial + 1
-                else:
-                    process = 0                     
+
+        params = {
+            'username': self.username,
+            'password': self.password
+        }
+
+        if self.version in ['v4']:
+            login_url = self.url + 'api/login'
         else:
-            params = {
-                'login': 'login',
-                'username': self.username,
-                'password': self.password
-            }
-            process         = 1
-            backofftime     = 1
-            trial           = 1
-            max_trials      = 5
-            while ( process and trial < max_trials) :            
-                try:      
-                    self.session.get(self.url + 'login', params=params).raise_for_status()
-                except HTTPError as e:
-                    log.error('HTTP error: %s'%e)
-                    sleep(backofftime)
-                    backofftime = backofftime * 2
-                    trial = trial + 1
-                else:
-                    process = 0
+            params.update({'login': 'login'})
+            login_url = self.url + 'login'
+
+        self._raw(login_url, params)
+
 
     def _logout(self):
         log.debug('logout()')
-        process         = 1
-        backofftime     = 1
-        trial           = 1
-        max_trials      = 5
-        while ( process and trial < max_trials) :            
-            try:
-                self.session.get(self.url + 'logout', params=params).raise_for_status()
-            except HTTPError as e:
-                log.error('HTTP error: %s'%e)
-                sleep(backofftime)
-                backofftime = backofftime * 2
-                trial = trial + 1
-            else:
-                process = 0
+        logout_url = 'logout'
+        if self.version in ['v4']:
+            logout_url = 'api/logout'
+        self._raw(self.url + logout_url)
+
 
     def get_alerts(self):
         """Return a list of all Alerts."""
 
-        return self._read(self.api_url + 'list/alarm')
+        return self._read('list/alarm')
+
 
     def get_alerts_unarchived(self):
         """Return a list of Alerts unarchived."""
 
         params = {'_sort': '-time', 'archived': False}
-        return self._read(self.api_url + 'list/alarm', params)
+        return self._read('list/alarm', params)
+
 
     def get_statistics_last_24h(self):
         """Returns statistical data of the last 24h"""
 
         return self.get_statistics_24h(time())
+
 
     def get_statistics_24h(self, endtime):
         """Return statistical data last 24h from time"""
@@ -196,54 +178,45 @@ class Controller:
             'start': int(endtime - 86400) * 1000,
             'end': int(endtime - 3600) * 1000
         }
-        return self._read(self.api_url + 'stat/report/hourly.system', params)
+        return self._read('stat/report/hourly.system', params)
+
 
     def get_events(self):
         """Return a list of all Events."""
 
-        return self._read(self.api_url + 'stat/event')
+        return self._read('stat/event')
 
-    def get_aps(self,site_id=None):
+
+    def get_aps(self, site=self.site_id):
         """Return a list of all AP:s, with significant information about each."""
 
-        if not site_id:
-            site_id = self.site_id
-        api_url = self.url + self._construct_api_path(site_id)
         params = {'_depth': 2, 'test': 0}
-        return self._read(api_url + 'stat/device', params)
+        return self._read('stat/device', params, site=site_id)
+
 
     def get_clients(self):
         """Return a list of all active clients, with significant information about each."""
 
-        return self._read(self.api_url + 'stat/sta')
+        return self._read('stat/sta')
+
 
     def get_users(self):
         """Return a list of all known clients, with significant information about each."""
 
-        return self._read(self.api_url + 'list/user')
+        return self._read('list/user')
+
 
     def get_user_groups(self):
         """Return a list of user groups with its rate limiting settings."""
 
-        return self._read(self.api_url + 'list/usergroup')
+        return self._read('list/usergroup')
+
 
     def get_wlan_conf(self):
         """Return a list of configured WLANs with their configuration parameters."""
 
-        return self._read(self.api_url + 'list/wlanconf')
+        return self._read('list/wlanconf')
 
-    def _run_command(self, command, params={}, mgr='stamgr', site_id=None):
-        if not site_id:
-            site_id = self.site_id
-        api_url = self.url + self._construct_api_path(site_id)
-        log.debug('_run_command(%s)', command)
-        params.update({'cmd': command})
-        return self._read(api_url + 'cmd/' + mgr, {'json': json.dumps(params)})
-
-    def _mac_cmd(self, target_mac, command, mgr='stamgr'):
-        log.debug('_mac_cmd(%s, %s)', target_mac, command)
-        params = {'mac': target_mac, 'cmd': command}
-        self._read(self.api_url + 'cmd/' + mgr, params)
 
     def block_client(self, mac):
         """Add a client to the block list.
@@ -253,7 +226,9 @@ class Controller:
 
         """
 
-        self._mac_cmd(mac, 'block-sta')
+        params = {'cmd': 'block-sta', 'mac': mac}
+        self._exec('cmd/stamgr', params)
+
 
     def unblock_client(self, mac):
         """Remove a client from the block list.
@@ -263,7 +238,9 @@ class Controller:
 
         """
 
-        self._mac_cmd(mac, 'unblock-sta')
+        params = {'cmd': 'unblock-sta', 'mac': mac}
+        self._exec('cmd/stamgr', params)
+
 
     def disconnect_client(self, mac):
         """Disconnect a client.
@@ -276,31 +253,43 @@ class Controller:
 
         """
 
-        self._mac_cmd(mac, 'kick-sta')
-        
-    def add_admin(self, email, name, role):
+        params = {'cmd': 'kick-sta', 'mac': mac}
+        self._exec('cmd/stamgr', params)
+
+
+    def add_admin(self, email, name, role, site_id=self.site_id):
         """Adds a new admin.
 
         Arguments:
-            email -- email address for admin.
-            name -- username for admin,  no spaces,  can be changed
-            role -- must be admin or readonly
+            email   -- email address for admin.
+            name    -- username for admin,  no spaces,  can be changed
+            role    -- must be admin or readonly
+            site_id -- which site is this admin for
 
         """
-        params = {'email': email, 'name': name, 'role': role, 'for_sso':'false'}
-        self._run_command('invide-admin', params, 'sitemgr')
+
+        params = {
+            'email'  : email,
+            'name'   : name,
+            'role'   : role,
+            'for_sso': 'false'
+            'cmd'    : 'invite-admin'
+        }
+        self._exec('cmd/sitemgr', params)
+
 
     def revoke_admin(self, admin):
         """Revoke admin account. per site.
 
         Arguements:
             admin -- id of admin to revoke
-        
+
         """
 
-        params = {'admin': admin}
-        self._run_command('revoke-admin', params, 'sitemgr')
-    
+        params = {'admin': admin, 'cmd': 'revoke-admin'}
+        self._exec(api_url, params)
+
+
     def restart_ap(self, mac):
         """Restart an access point (by MAC).
 
@@ -309,7 +298,9 @@ class Controller:
 
         """
 
-        self._mac_cmd(mac, 'restart', 'devmgr')
+        params = {'cmd': 'restart', 'mac': mac}
+        self._exec('cmd/devmgr', params)
+
 
     def restart_ap_name(self, name):
         """Restart an access point (by name).
@@ -325,25 +316,27 @@ class Controller:
             if ap.get('state', 0) == 1 and ap.get('name', None) == name:
                 self.restart_ap(ap['mac'])
 
+
     def archive_all_alerts(self):
         """Archive all Alerts
         """
-        js = json.dumps({'cmd': 'archive-all-alarms'})
-        params = {'json': js}
-        answer = self._read(self.api_url + 'cmd/evtmgr', params)
-        
-    def create_backup(self):
+
+        params = {'cmd': 'archive-all-alarms'}
+        self._exec('cmd/evtmgr', params)
+
+
+    def _create_backup(self):
         """Ask controller to create a backup archive file, response contains the path to the backup file.
 
         Warning: This process puts significant load on the controller may
                  render it partially unresponsive for other requests.
         """
 
-        js = json.dumps({'cmd': 'backup'})
-        params = {'json': js}
+        params = {'cmd': 'backup'}
         answer = self._read(self.api_url + 'cmd/system', params)
 
         return answer[0].get('url')
+
 
     def get_backup(self, target_file='unifi-backup.unf'):
         """Get a backup archive from a controller.
@@ -352,11 +345,11 @@ class Controller:
             target_file -- Filename or full path to download the backup archive to, should have .unf extension for restore.
 
         """
-        download_path = self.create_backup()
+        download_path = self._create_backup()
 
-        opener = self.opener.open(self.url + download_path)
-        unifi_archive = opener.read()
+        with open(target_file, 'wb') as handle:
+            response = self.session.get(download_path, stream=True)
 
-        backupfile = open(target_file, 'w')
-        backupfile.write(unifi_archive)
-        backupfile.close()
+            for block in response.iter_content(1024):
+                handle.write(block)
+
