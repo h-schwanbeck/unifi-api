@@ -20,12 +20,13 @@ PYTHON_VERSION = sys.version_info[0]
 
 if PYTHON_VERSION == 2:
     from cookielib import CookieJar
-    from urllib2 import build_opener, HTTPCookieProcessor
+    from urllib2 import build_opener, HTTPCookieProcessor, URLError
     from urllib import urlencode
 elif PYTHON_VERSION == 3:
     from http.cookiejar import CookieJar
     from urllib.request import build_opener, HTTPCookieProcessor
     from urllib.parse import urlencode
+    import ast
 
 import json
 import logging
@@ -93,6 +94,8 @@ class Controller:
             self._logout()
 
     def _jsondec(self, data):
+        if PYTHON_VERSION == 3:
+            data = data.decode()
         obj = json.loads(data)
         if 'meta' in obj:
             if obj['meta']['rc'] != 'ok':
@@ -102,23 +105,45 @@ class Controller:
         return obj
 
     def _read(self, url, params=None):
-        if isinstance(params, dict):
-            params = urlencode(params)
-        if isinstance(params, str):
-            params = params.encode('utf-8')
-        res = self.opener.open(url, params)
-        return self._jsondec(res.read().decode('utf-8'))
+        from .helpers import retry
+        if PYTHON_VERSION == 3:
+            if params is not None:
+                params = ast.literal_eval(params)
+                params = urlencode(params)
+                params = params.encode('utf-8')
+                res = self.opener.open(url, params)
+            else:
+                res = self.opener.open(url)
+        elif PYTHON_VERSION == 2:
+            process         = 1
+            backofftime     = 1
+            trial           = 1
+            max_trials      = 5
+            while ( process and trial < max_trials) :            
+                try:
+                    res = self.opener.open(url, params)
+                except URLError,e:
+                    log.error('URL error while trying connect to %s'%url)
+                    time.sleep(backofftime)
+                    backofftime = backofftime * 2
+                    trial = trial + 1
+                else:
+                    process = 0                    
 
-    def _construct_api_path(self, version):
+        return self._jsondec(res.read())
+
+    def _construct_api_path(self, version,site_id=None):
         """Returns valid base API path based on version given
 
            The base API path for the URL is different depending on UniFi server version.
            Default returns correct path for latest known stable working versions.
 
         """
+        if not site_id:
+            site_id = self.site_id
 
         V2_PATH = 'api/'
-        V3_PATH = 'api/s/' + self.site_id + '/'
+        V3_PATH = 'api/s/' + site_id + '/'
 
         if(version == 'v2'):
             return V2_PATH
@@ -131,27 +156,61 @@ class Controller:
 
     def _login(self, version):
         log.debug('login() as %s', self.username)
-
-        params = {'username': self.username, 'password': self.password}
-        login_url = self.url
-
-        if version == 'v4':
-            login_url += 'api/login'
-            params = json.dumps(params)
+        
+        if(version == 'v4'):
+            params = "{'username':'" + self.username + "','password':'" + self.password + "'}"
+            process         = 1
+            backofftime     = 1
+            trial           = 1
+            max_trials      = 5
+            while ( process and trial < max_trials) :            
+                try:            
+                    self.opener.open(self.url + 'api/login', params).read()
+                except URLError,e:
+                    log.error('URL error while trying connect to %s'%self.url)
+                    time.sleep(backofftime)
+                    backofftime = backofftime * 2
+                    trial = trial + 1
+                else:
+                    process = 0                     
         else:
-            login_url += 'login'
-            params.update({'login': 'login'})
-            params = urlencode(params)
-
-        if isinstance(params, str):
-            params = params.encode("UTF-8")
-
-        self.opener.open(login_url, params).read()
+            if PYTHON_VERSION == 2:
+                params = urlencode({'login': 'login',
+                                   'username': self.username, 'password': self.password})
+            elif PYTHON_VERSION == 3:
+                params = urlencode({'login': 'login',
+                                   'username': self.username, 'password': self.password}).encode("UTF-8")
+            process         = 1
+            backofftime     = 1
+            trial           = 1
+            max_trials      = 5
+            while ( process and trial < max_trials) :            
+                try:                
+                    self.opener.open(self.url + 'login', params).read()
+                except URLError,e:
+                    log.error('URL error while trying connect to %s'%self.url)
+                    time.sleep(backofftime)
+                    backofftime = backofftime * 2
+                    trial = trial + 1
+                else:
+                    process = 0
 
     def _logout(self):
         log.debug('logout()')
-
-        self.opener.open(self.url + 'logout').read()
+        process         = 1
+        backofftime     = 1
+        trial           = 1
+        max_trials      = 5
+        while ( process and trial < max_trials) :            
+            try:  
+                self.opener.open(self.url + 'logout').read()
+            except URLError,e:
+                log.error('URL error while trying connect to %s'%self.url)
+                time.sleep(backofftime)
+                backofftime = backofftime * 2
+                trial = trial + 1
+            else:
+                process = 0
 
     def get_alerts(self):
         """Return a list of all Alerts."""
@@ -161,7 +220,8 @@ class Controller:
     def get_alerts_unarchived(self):
         """Return a list of Alerts unarchived."""
 
-        params = json.dumps({'_sort': '-time', 'archived': False})
+        js = json.dumps({'_sort': '-time', 'archived': False})
+        params = urllib.urlencode({'json': js})
         return self._read(self.api_url + 'list/alarm', params)
 
     def get_statistics_last_24h(self):
@@ -172,21 +232,25 @@ class Controller:
     def get_statistics_24h(self, endtime):
         """Return statistical data last 24h from time"""
 
-        params = json.dumps(
+        js = json.dumps(
             {'attrs': ["bytes", "num_sta", "time"], 'start': int(endtime - 86400) * 1000, 'end': int(endtime - 3600) * 1000})
-        return self._read(self.api_url + 'stat/report/hourly.site', params)
+        params = urllib.urlencode({'json': js})
+        return self._read(self.api_url + 'stat/report/hourly.system', params)
 
     def get_events(self):
         """Return a list of all Events."""
 
         return self._read(self.api_url + 'stat/event')
 
-    def get_aps(self):
+    def get_aps(self,site_id=None):
         """Return a list of all AP:s, with significant information about each."""
 
         #Set test to 0 instead of NULL
+        if not site_id:
+            site_id = self.site_id
+        api_url = self.url + self._construct_api_path(self.version,site_id=site_id)
         params = json.dumps({'_depth': 2, 'test': 0})
-        return self._read(self.api_url + 'stat/device', params)
+        return self._read(api_url + 'stat/device', params)
 
     def get_clients(self):
         """Return a list of all active clients, with significant information about each."""
@@ -207,16 +271,14 @@ class Controller:
         """Return a list of configured WLANs with their configuration parameters."""
 
         return self._read(self.api_url + 'list/wlanconf')
-    
-    def get_sites(self):
-        """Return a list of sites"""
-        
-        return self._read(self.url + 'api/stat/sites')
 
-    def _run_command(self, command, params={}, mgr='stamgr'):
+    def _run_command(self, command, params={}, mgr='stamgr',site_id =None):
+        if not site_id:
+            site_id = self.site_id
+        api_url = self.url + self._construct_api_path(self.version,site_id=site_id)
         log.debug('_run_command(%s)', command)
         params.update({'cmd': command})
-        return self._read(self.api_url + 'cmd/' + mgr, json.dumps(params))
+        return self._read(api_url + 'cmd/' + mgr, urlencode({'json': json.dumps(params)}))
 
     def _mac_cmd(self, target_mac, command, mgr='stamgr'):
         log.debug('_mac_cmd(%s, %s)', target_mac, command)
@@ -256,27 +318,6 @@ class Controller:
 
         self._mac_cmd(mac, 'kick-sta')
         
-    def adopt_ap(self, mac):
-        """Adopt an access point (by MAC).
-
-        Arguments:
-            mac -- the MAC address of the AP to restart.
-
-        """
-
-        self._mac_cmd(mac, 'adopt', 'devmgr')
-
-    def add_site(self, site):
-        """Adds a new site.
-
-        Arguments:
-            site -- the site name to add.
-
-        """
-        params = {'desc': site}
-
-        self._run_command('add-site', params, 'sitemgr')
-
     def add_admin(self, email, name, role):
         """Adds a new admin.
 
@@ -327,7 +368,8 @@ class Controller:
     def archive_all_alerts(self):
         """Archive all Alerts
         """
-        params = json.dumps({'cmd': 'archive-all-alarms'})
+        js = json.dumps({'cmd': 'archive-all-alarms'})
+        params = urlencode({'json': js})
         answer = self._read(self.api_url + 'cmd/evtmgr', params)
 
     def create_backup(self):
@@ -337,7 +379,8 @@ class Controller:
                  render it partially unresponsive for other requests.
         """
 
-        params = json.dumps({'cmd': 'backup'})
+        js = json.dumps({'cmd': 'backup'})
+        params = urlencode({'json': js})
         answer = self._read(self.api_url + 'cmd/system', params)
 
         return answer[0].get('url')
@@ -395,3 +438,120 @@ class Controller:
         js = {'mac': guest_mac}
 
         return self._run_command(cmd, params=js)
+
+    def add_site(self, sitename):
+        """Add a new site.
+
+        Arguments:
+            sitename -- namegiven for the new site.
+
+        """
+        log.debug('_sitemgr_cmd(%s, %s)', sitename, 'add-site')
+        params = {'desc': sitename}
+        return self._run_command('add-site', params, mgr='sitemgr')
+
+    def adopt_ap(self, ap_mac):
+        """Adopt a new AP.
+
+        Arguments:
+            ap_mac -- MAC address of the given ap.
+
+        """
+        log.debug('_devmgr_cmd(%s, %s)', ap_mac, "adopt")
+        params = {'mac': ap_mac}
+        return self._run_command('adopt', params, mgr='devmgr')    
+
+    def check_ap_state(self,ap_mac):
+        """Check the status of a given AP in the site
+        Arguments:
+            ap_mac -- MAC address of the given ap.
+
+        """        
+        return self._read(self.api_url + 'stat/device/%s'%ap_mac)
+
+    def move_ap(self,ap_mac,site_id,site_code):
+        """Move the specified AP from this site to another.
+
+        Arguments:
+            ap_mac -- MAC address of the given ap.
+            site_id --  unifi site ID to which it should be moved
+            site_code -- _id used by unifi for representing wifi site
+
+        """
+        log.debug('_sitemgr_cmd(%s, %s, %s)', ap_mac,site_id, "move-device")
+        params = {'mac': ap_mac,'site':site_code}
+        return self._run_command('move-device', params, mgr='sitemgr')  
+
+
+    def forget_ap(self,ap_mac,site_id):
+        """Forget the specified AP from controller
+
+        Arguments:
+            ap_mac -- MAC address of the given ap.
+            site_id --  unifi site ID to which it should be moved
+            site_code -- _id used by unifi for representing wifi site
+
+        """
+        log.debug('_sitemgr_cmd(%s, %s, %s)', ap_mac,site_id, "delete-device")
+        params = {'mac': ap_mac}
+        return self._run_command('delete-device', params, mgr='sitemgr',site_id=site_id)  
+
+
+
+    def _set_setting(self,site_id, params={}, category='super_smtp'):
+
+        api_url = self.url + self._construct_api_path(self.version,site_id=site_id)
+        log.debug('_set_setting(%s)', category)
+        if PYTHON_VERSION == 2:
+            return self._read(api_url + 'set/setting/' + category, urllib.urlencode({'json': json.dumps(params)}))
+        elif PYTHON_VERSION == 3:
+            return self._read(api_url + 'set/setting/' + category, urllib.parse.urlencode({'json': json.dumps(params)}))        
+
+    def set_smtp(self,site_id,host='127.0.0.1',port='25',use_ssl=False,
+            use_auth=False,username=None,x_password=None,use_sender=False,sender=None):
+
+        """Set SMTP seetings for this site
+
+        Arguments:
+
+
+        """
+        log.debug('setting SMTP settings for site:%s',self.site_id )
+        params = {'host': host,'port':port,'use_ssl':use_ssl,
+                   'use_auth':use_auth,'username':username,'x_password':x_password,'use_sender':use_sender,'sender':sender}
+        return self._set_setting(site_id=site_id,params=params, category='super_smtp')          
+
+    def create_site_admin(self,site_id,name,email):
+        """Create Admin for the particular site
+
+        Arguments:
+            name -- Admin User Name.
+            email -- Email
+            site_id --  unifi site ID to which it should be moved
+
+        """
+        log.debug('_sitemgr_cmd(%s, %s, %s)', name,site_id, "invite-admin")
+        params = {'name': name,'email':email,'site':site_id}
+        return self._run_command('invite-admin', params, mgr='sitemgr',site_id=site_id)  
+
+    def set_guest_access(self,site_id,site_code,portal_ip,portal_subnet,portal_hostname):
+
+        """Set SMTP seetings for this site
+
+        Arguments:
+
+
+        """
+        log.debug('setting Guest settings for site:%s',site_id )
+
+        params =  {"portal_enabled":True,"auth":"custom","x_password":"","expire":"480","redirect_enabled":False,"redirect_url":'',
+        "custom_ip":portal_ip,"portal_customized":False,"portal_use_hostname":True,"portal_hostname":
+        portal_hostname,"voucher_enabled":False,"payment_enabled":False,"gateway":"paypal","x_paypal_username":
+        "","x_paypal_password":"","x_paypal_signature":"","paypal_use_sandbox":False,"x_stripe_api_key":"","x_quickpay_merchantid":
+        "","x_quickpay_md5secret":"","x_authorize_loginid":"","x_authorize_transactionkey":"","authorize_use_sandbox":
+        False,"x_merchantwarrior_merchantuuid":"","x_merchantwarrior_apikey":"","x_merchantwarrior_apipassphrase":
+        "","merchantwarrior_use_sandbox":False,"x_ippay_terminalid":"","ippay_use_sandbox":False,"restricted_subnet_1":
+        "192.168.0.0/16","restricted_subnet_2":"172.16.0.0/12","restricted_subnet_3":"10.0.0.0/8","allowed_subnet_1":
+        portal_subnet,"key":"guest_access","site_id":site_code}  
+
+        return self._set_setting(site_id=site_id,params=params, category='guest_access')  
