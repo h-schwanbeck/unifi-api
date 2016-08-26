@@ -50,10 +50,10 @@ class Controller:
         self.username = username
         self.password = password
         self.site_id = site_id
-        self.url = "https://{host}:{port}/".format(host=self.host, port=self.port)
-        self.api_url = self.url + self._construct_api_path()
+        self.base_url = "https://{host}:{port}/".format(host=self.host, port=self.port)
+        self.api_url = "{url}{path}".format(url=self.base_url, path=self._construct_api_path())
 
-        log.debug('Controller for %s', self.url)
+        log.debug('Controller for %s', self.base_url)
 
         self.session = Session()
         self.session.verify = verify_ssl
@@ -90,23 +90,13 @@ class Controller:
         return res
 
 
-    def _read(self, command, params=None, site=self.site_id):
-        url = "{base}{version}{command}".format(
-            base    = self.url,
-            version = self._construct_api_path(site),
-            command = command
-        )
-        res = self._raw(url, params)
+    def _read(self, command, params=None):
+        res = self._raw(self.api_url + command, params)
         return self._jsondec(res)
 
 
-    def _exec(self, command, params=None, site=self.site_id):
-        url = "{base}{version}{command}".format(
-            base    = self.url,
-            version = self._construct_api_path(site),
-            command = command
-        )
-        self._raw(url, params)
+    def _exec(self, command, params=None):
+        self._raw(self.api_url + command, params)
 
 
     def _construct_api_path(self, site_id=None):
@@ -135,10 +125,10 @@ class Controller:
         }
 
         if self.version in ['v4']:
-            login_url = self.url + 'api/login'
+            login_url = self.base_url + 'api/login'
         else:
             params.update({'login': 'login'})
-            login_url = self.url + 'login'
+            login_url = self.base_url + 'login'
 
         self._raw(login_url, params)
 
@@ -148,7 +138,7 @@ class Controller:
         logout_url = 'logout'
         if self.version in ['v4']:
             logout_url = 'api/logout'
-        self._raw(self.url + logout_url)
+        self._raw(self.base_url + logout_url)
 
 
     def get_alerts(self):
@@ -187,11 +177,11 @@ class Controller:
         return self._read('stat/event')
 
 
-    def get_aps(self, site=self.site_id):
+    def get_aps(self):
         """Return a list of all AP:s, with significant information about each."""
 
         params = {'_depth': 2, 'test': 0}
-        return self._read('stat/device', params, site=site_id)
+        return self._read('stat/device', params)
 
 
     def get_clients(self):
@@ -257,14 +247,13 @@ class Controller:
         self._exec('cmd/stamgr', params)
 
 
-    def add_admin(self, email, name, role, site_id=self.site_id):
+    def add_admin(self, email, name, role):
         """Adds a new admin.
 
         Arguments:
             email   -- email address for admin.
             name    -- username for admin,  no spaces,  can be changed
             role    -- must be admin or readonly
-            site_id -- which site is this admin for
 
         """
 
