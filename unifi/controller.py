@@ -187,6 +187,12 @@ class Controller:
         return self._read('stat/sta')
 
 
+    def get_sites(self):
+        """Return a list of sites"""
+
+        return self._read('api/stat/sites')
+
+
     def get_users(self):
         """Return a list of all known clients, with significant information about each."""
 
@@ -303,54 +309,54 @@ class Controller:
                 self.restart_ap(ap['mac'])
 
 
-    def adopt_ap(self, ap_mac):
+    def adopt_ap(self, mac):
         """Adopt a new AP.
 
         Arguments:
-            ap_mac -- MAC address of the given ap.
+            mac -- MAC address of the given ap.
 
         """
 
-        log.debug('_devmgr_cmd(%s, %s)', ap_mac, "adopt")
-        params = {'cmd': 'adopt', 'mac': ap_mac}
+        log.debug('_devmgr_cmd(%s, %s)', mac, "adopt")
+        params = {'cmd': 'adopt', 'mac': mac}
         self._exec('cmd/devmgr', params)    
 
 
-    def check_ap_state(self, ap_mac):
+    def check_ap_state(self, mac):
         """Check the status of a given AP in the site
         Arguments:
             ap_mac -- MAC address of the given ap.
 
         """
     
-        return self._read('stat/device/%s'%ap_mac)
+        return self._read('stat/device/%s'%mac)
 
 
-    def move_ap(self, ap_mac, site_id):
+    def move_ap(self, mac, site_id):
         """Move the specified AP from this site to another.
 
         Arguments:
-            ap_mac -- MAC address of the given ap.
+            mac -- MAC address of the given ap.
             site_id -- _id used by unifi for representing wifi site
 
         """
 
-        log.debug('_sitemgr_cmd(%s, %s, %s)', ap_mac, site_id, "move-device")
-        params = {'cmd': 'move-device', 'mac': ap_mac, 'site': site_id}
+        log.debug('_sitemgr_cmd(%s, %s, %s)', mac, site_id, "move-device")
+        params = {'cmd': 'move-device', 'mac': mac, 'site': site_id}
         self._exec('cmd/sitemgr', params)  
 
 
-    def forget_ap(self, ap_mac):
+    def forget_ap(self, mac):
         """Forget the specified AP from controller
 
         Arguments:
-            ap_mac  -- MAC address of the given ap.
+            mac  -- MAC address of the given ap.
             site_id -- unifi site ID to which it should be moved
 
         """
 
-        log.debug('_sitemgr_cmd(%s, %s, %s)', ap_mac, "delete-device")
-        params = {'cmd': 'delete-device', 'mac': ap_mac}
+        log.debug('_sitemgr_cmd(%s, %s, %s)', mac, "delete-device")
+        params = {'cmd': 'delete-device', 'mac': mac}
         self._exec('cmd/sitemgr', params)
 
 
@@ -412,7 +418,7 @@ class Controller:
 
 
 
-    ''' Not converted yet
+''' Not converted yet
 
 
 
